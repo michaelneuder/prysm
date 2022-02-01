@@ -1,4 +1,4 @@
-package imported
+package local
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/prysmaticlabs/prysm/validator/accounts/iface"
 	"github.com/prysmaticlabs/prysm/validator/accounts/petnames"
 	"github.com/prysmaticlabs/prysm/validator/keymanager"
+	util "github.com/wealdtech/go-eth2-util"
 	keystorev4 "github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4"
 	"go.opencensus.io/trace"
 )
@@ -31,13 +32,19 @@ var (
 const (
 	// KeystoreFileNameFormat exposes the filename the keystore should be formatted in.
 	KeystoreFileNameFormat = "keystore-%d.json"
-	// AccountsPath where all imported keymanager keystores are kept.
+	// AccountsPath where all local keymanager keystores are kept.
 	AccountsPath = "accounts"
 	// AccountsKeystoreFileName exposes the name of the keystore file.
 	AccountsKeystoreFileName = "all-accounts.keystore.json"
+	// DerivationPathFormat describes the structure of how keys are derived from a master key.
+	DerivationPathFormat = "m / purpose / coin_type / account_index / withdrawal_key / validating_key"
+	// ValidatingKeyDerivationPathTemplate defining the hierarchical path for validating
+	// keys for Prysm Ethereum validators. According to EIP-2334, the format is as follows:
+	// m / purpose / coin_type / account_index / withdrawal_key / validating_key
+	ValidatingKeyDerivationPathTemplate = "m/12381/3600/%d/0/0"
 )
 
-// Keymanager implementation for imported keystores utilizing EIP-2335.
+// Keymanager implementation for local keystores utilizing EIP-2335.
 type Keymanager struct {
 	wallet              iface.Wallet
 	accountsStore       *accountStore
@@ -75,7 +82,7 @@ func ResetCaches() {
 	lock.Unlock()
 }
 
-// NewKeymanager instantiates a new imported keymanager from configuration options.
+// NewKeymanager instantiates a new local keymanager from configuration options.
 func NewKeymanager(ctx context.Context, cfg *SetupConfig) (*Keymanager, error) {
 	k := &Keymanager{
 		wallet:              cfg.Wallet,
@@ -134,7 +141,7 @@ func (km *Keymanager) SubscribeAccountChanges(pubKeysChan chan [][fieldparams.BL
 	return km.accountsChangedFeed.Subscribe(pubKeysChan)
 }
 
-// ValidatingAccountNames for a imported keymanager.
+// ValidatingAccountNames for a local keymanager.
 func (_ *Keymanager) ValidatingAccountNames() ([]string, error) {
 	lock.RLock()
 	names := make([]string, len(orderedPublicKeys))
@@ -165,7 +172,7 @@ func (km *Keymanager) initializeKeysCachesFromKeystore() error {
 	return nil
 }
 
-// FetchValidatingPublicKeys fetches the list of active public keys from the imported account keystores.
+// FetchValidatingPublicKeys fetches the list of active public keys from the local account keystores.
 func (_ *Keymanager) FetchValidatingPublicKeys(ctx context.Context) ([][fieldparams.BLSPubkeyLength]byte, error) {
 	_, span := trace.StartSpan(ctx, "keymanager.FetchValidatingPublicKeys")
 	defer span.End()
@@ -316,4 +323,29 @@ func (km *Keymanager) CreateAccountsKeystore(
 		Version: encryptor.Version(),
 		Name:    encryptor.Name(),
 	}, nil
+}
+
+// RecoverAccountsFromMnemonic given a mnemonic phrase, is able to regenerate N accounts
+// from a derived seed, encrypt them according to the EIP-2334 JSON standard, and write them
+// to disk. Then, the mnemonic is never stored nor used by the validator.
+func (km *Keymanager) RecoverAccountsFromMnemonic(
+	ctx context.Context, mnemonic, mnemonicPassphrase string, numAccounts int,
+) error {
+	seed, err := seedFromMnemonic(mnemonic, mnemonicPassphrase)
+	if err != nil {
+		return errors.Wrap(err, "could not initialize new wallet seed file")
+	}
+	privKeys := make([][]byte, numAccounts)
+	pubKeys := make([][]byte, numAccounts)
+	for i := 0; i < numAccounts; i++ {
+		privKey, err := util.PrivateKeyFromSeedAndPath(
+			seed, fmt.Sprintf(ValidatingKeyDerivationPathTemplate, i),
+		)
+		if err != nil {
+			return err
+		}
+		privKeys[i] = privKey.Marshal()
+		pubKeys[i] = privKey.PublicKey().Marshal()
+	}
+	return km.ImportKeypairs(ctx, privKeys, pubKeys)
 }
