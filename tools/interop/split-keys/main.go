@@ -23,7 +23,6 @@ import (
 	"github.com/prysmaticlabs/prysm/io/file"
 	"github.com/prysmaticlabs/prysm/validator/accounts/wallet"
 	"github.com/prysmaticlabs/prysm/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/validator/keymanager/derived"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/local"
 	"github.com/tyler-smith/go-bip39"
 	util "github.com/wealdtech/go-eth2-util"
@@ -76,7 +75,7 @@ func main() {
 }
 
 // Uses the provided mnemonic seed phrase to generate the
-// appropriate seed file for recovering a derived wallets.
+// appropriate seed file for recovering a local wallets.
 func seedFromMnemonic(mnemonic, mnemonicPassphrase string) ([]byte, error) {
 	if ok := bip39.IsMnemonicValid(mnemonic); !ok {
 		return nil, bip39.ErrInvalidMnemonic
@@ -100,7 +99,7 @@ func generateKeysFromMnemonicList(mnemonicListFile *bufio.Scanner, keysPerMnemon
 				log.Printf("%d/%d keys generated\n", i, keysPerMnemonic)
 			}
 			privKey, seedErr := util.PrivateKeyFromSeedAndPath(
-				seed, fmt.Sprintf(derived.ValidatingKeyDerivationPathTemplate, i),
+				seed, fmt.Sprintf(local.ValidatingKeyDerivationPathTemplate, i),
 			)
 			if seedErr != nil {
 				err = seedErr

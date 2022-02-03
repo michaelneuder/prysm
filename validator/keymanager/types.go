@@ -67,8 +67,6 @@ type Kind int
 const (
 	// Local keymanager defines an on-disk, encrypted keystore-capable store.
 	Local Kind = iota
-	// Derived keymanager using a hierarchical-deterministic algorithm.
-	Derived
 	// Remote keymanager capable of remote-signing data.
 	Remote
 	// Web3Signer keymanager capable of signing data using a remote signer called Web3Signer.
@@ -82,8 +80,6 @@ const IncorrectPasswordErrMsg = "invalid checksum"
 // String marshals a keymanager kind to a string value.
 func (k Kind) String() string {
 	switch k {
-	case Derived:
-		return "derived"
 	case Local:
 		return "direct"
 	case Remote:
@@ -98,8 +94,9 @@ func (k Kind) String() string {
 // ParseKind from a raw string, returning a keymanager kind.
 func ParseKind(k string) (Kind, error) {
 	switch k {
+	// Preserving legacy `derived` name for parsing directory paths.
 	case "derived":
-		return Derived, nil
+		return Local, nil
 	case "direct":
 		return Local, nil
 	case "remote":

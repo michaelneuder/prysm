@@ -48,8 +48,6 @@ func (s *Server) CreateWallet(ctx context.Context, req *pb.CreateWalletRequest) 
 		}
 		keymanagerKind := pb.KeymanagerKind_IMPORTED
 		switch s.wallet.KeymanagerKind() {
-		case keymanager.Derived:
-			keymanagerKind = pb.KeymanagerKind_DERIVED
 		case keymanager.Remote:
 			keymanagerKind = pb.KeymanagerKind_REMOTE
 		case keymanager.Web3Signer:
@@ -124,8 +122,6 @@ func (s *Server) WalletConfig(_ context.Context, _ *empty.Empty) (*pb.WalletResp
 	}
 	var keymanagerKind pb.KeymanagerKind
 	switch s.wallet.KeymanagerKind() {
-	case keymanager.Derived:
-		keymanagerKind = pb.KeymanagerKind_DERIVED
 	case keymanager.Local:
 		keymanagerKind = pb.KeymanagerKind_IMPORTED
 	case keymanager.Remote:
@@ -140,7 +136,7 @@ func (s *Server) WalletConfig(_ context.Context, _ *empty.Empty) (*pb.WalletResp
 	}, nil
 }
 
-// RecoverWallet via an API request, allowing a user to recover a derived.
+// RecoverWallet via an API request, allowing a user to recover a local wallet.
 // Generate the seed from the mnemonic + language + 25th passphrase(optional).
 // Create N validator keystores from the seed specified by req.NumAccounts.
 // Set the wallet password to req.WalletPassword, then create the wallet from
@@ -199,7 +195,7 @@ func (s *Server) RecoverWallet(ctx context.Context, req *pb.RecoverWalletRequest
 	}
 	if err := s.initializeWallet(ctx, &wallet.Config{
 		WalletDir:      walletDir,
-		KeymanagerKind: keymanager.Derived,
+		KeymanagerKind: keymanager.Local,
 		WalletPassword: walletPassword,
 	}); err != nil {
 		return nil, err
@@ -210,7 +206,7 @@ func (s *Server) RecoverWallet(ctx context.Context, req *pb.RecoverWalletRequest
 	return &pb.CreateWalletResponse{
 		Wallet: &pb.WalletResponse{
 			WalletPath:     walletDir,
-			KeymanagerKind: pb.KeymanagerKind_DERIVED,
+			KeymanagerKind: pb.KeymanagerKind_IMPORTED,
 		},
 	}, nil
 }
