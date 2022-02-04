@@ -17,7 +17,6 @@ import (
 	"github.com/prysmaticlabs/prysm/validator/accounts/iface"
 	accountsprompt "github.com/prysmaticlabs/prysm/validator/accounts/userprompt"
 	"github.com/prysmaticlabs/prysm/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/validator/keymanager/derived"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/local"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/remote"
 	remote_web3signer "github.com/prysmaticlabs/prysm/validator/keymanager/remote-web3signer"
@@ -54,8 +53,7 @@ var (
 	)
 	// KeymanagerKindSelections as friendly text.
 	KeymanagerKindSelections = map[keymanager.Kind]string{
-		keymanager.Local:      "Imported Wallet (Recommended)",
-		keymanager.Derived:    "HD Wallet",
+		keymanager.Local:      "Local Wallet (Recommended)",
 		keymanager.Remote:     "Remote Signing Wallet (Advanced)",
 		keymanager.Web3Signer: "Consensys Web3Signer (Advanced)",
 	}
@@ -78,12 +76,13 @@ type Config struct {
 // Wallet is a primitive in Prysm's account management which
 // has the capability of creating new accounts, reading existing accounts,
 // and providing secure access to Ethereum proof of stake secrets depending on an
-// associated keymanager (either imported, derived, or remote signing enabled).
+// associated keymanager (either local or remote signing enabled).
 type Wallet struct {
 	walletDir      string
 	accountsPath   string
 	configFilePath string
 	walletPassword string
+	enableMnemonic bool
 	keymanagerKind keymanager.Kind
 }
 
@@ -256,6 +255,11 @@ func (w *Wallet) KeymanagerKind() keymanager.Kind {
 	return w.keymanagerKind
 }
 
+// EnableMnemonic is active.
+func (w *Wallet) EnableMnemonic() bool {
+	return w.enableMnemonic
+}
+
 // AccountsDir for the wallet.
 func (w *Wallet) AccountsDir() string {
 	return w.accountsPath
@@ -278,15 +282,7 @@ func (w *Wallet) InitializeKeymanager(ctx context.Context, cfg iface.InitKeymana
 			ListenForChanges: cfg.ListenForChanges,
 		})
 		if err != nil {
-			return nil, errors.Wrap(err, "could not initialize imported keymanager")
-		}
-	case keymanager.Derived:
-		km, err = derived.NewKeymanager(ctx, &derived.SetupConfig{
-			Wallet:           w,
-			ListenForChanges: cfg.ListenForChanges,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "could not initialize derived keymanager")
+			return nil, errors.Wrap(err, "could not initialize local keymanager")
 		}
 	case keymanager.Remote:
 		configFile, err := w.ReadKeymanagerConfigFromDisk(ctx)

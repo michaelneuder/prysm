@@ -15,7 +15,6 @@ import (
 	"github.com/prysmaticlabs/prysm/validator/accounts/petnames"
 	"github.com/prysmaticlabs/prysm/validator/accounts/wallet"
 	"github.com/prysmaticlabs/prysm/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/validator/keymanager/derived"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/local"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/remote"
 	remote_web3signer "github.com/prysmaticlabs/prysm/validator/keymanager/remote-web3signer"
@@ -59,14 +58,6 @@ func ListAccountsCli(cliCtx *cli.Context) error {
 		}
 		if err := listLocalKeymanagerAccounts(cliCtx.Context, showDepositData, showPrivateKeys, km); err != nil {
 			return errors.Wrap(err, "could not list validator accounts with local keymanager")
-		}
-	case keymanager.Derived:
-		km, ok := km.(*derived.Keymanager)
-		if !ok {
-			return errors.New("could not assert keymanager interface to concrete type")
-		}
-		if err := listDerivedKeymanagerAccounts(cliCtx.Context, showPrivateKeys, km); err != nil {
-			return errors.Wrap(err, "could not list validator accounts with derived keymanager")
 		}
 	case keymanager.Remote:
 		km, ok := km.(*remote.Keymanager)
@@ -126,6 +117,11 @@ func listLocalKeymanagerAccounts(
 			return errors.Wrap(err, "could not fetch private keys")
 		}
 	}
+	// Display mnemonic specific data
+	if keymanager.EnableMnemonic() {
+		fmt.Printf("Mnemonic Local wallet:\n")
+		fmt.Printf("(derivation format) %s\n", au.BrightGreen(local.DerivationPathFormat).Bold())
+	}
 	for i := 0; i < len(accountNames); i++ {
 		fmt.Println("")
 		fmt.Printf("%s | %s\n", au.BrightBlue(fmt.Sprintf("Account %d", i)).Bold(), au.BrightGreen(accountNames[i]).Bold())
@@ -134,6 +130,10 @@ func listLocalKeymanagerAccounts(
 			if len(privateKeys) > i {
 				fmt.Printf("%s %#x\n", au.BrightRed("[validating private key]").Bold(), privateKeys[i])
 			}
+		}
+		if keymanager.EnableMnemonic() {
+			validatingKeyPath := fmt.Sprintf(local.ValidatingKeyDerivationPathTemplate, i)
+			fmt.Printf("%s %s\n", au.BrightCyan("[derivation path]").Bold(), validatingKeyPath)
 		}
 		if !showDepositData {
 			continue
@@ -146,54 +146,6 @@ func listLocalKeymanagerAccounts(
 		fmt.Println("")
 	}
 	fmt.Println("")
-	return nil
-}
-
-func listDerivedKeymanagerAccounts(
-	ctx context.Context,
-	showPrivateKeys bool,
-	keymanager *derived.Keymanager,
-) error {
-	au := aurora.NewAurora(true)
-	fmt.Printf("(keymanager kind) %s\n", au.BrightGreen("derived, (HD) hierarchical-deterministic").Bold())
-	fmt.Printf("(derivation format) %s\n", au.BrightGreen(derived.DerivationPathFormat).Bold())
-	validatingPubKeys, err := keymanager.FetchValidatingPublicKeys(ctx)
-	if err != nil {
-		return errors.Wrap(err, "could not fetch validating public keys")
-	}
-	var validatingPrivateKeys [][32]byte
-	if showPrivateKeys {
-		validatingPrivateKeys, err = keymanager.FetchValidatingPrivateKeys(ctx)
-		if err != nil {
-			return errors.Wrap(err, "could not fetch validating private keys")
-		}
-	}
-	accountNames, err := keymanager.ValidatingAccountNames(ctx)
-	if err != nil {
-		return err
-	}
-	if len(accountNames) == 1 {
-		fmt.Print("Showing 1 validator account\n")
-	} else if len(accountNames) == 0 {
-		fmt.Print("No accounts found\n")
-		return nil
-	} else {
-		fmt.Printf("Showing %d validator accounts\n", len(accountNames))
-	}
-	for i := 0; i < len(accountNames); i++ {
-		fmt.Println("")
-		validatingKeyPath := fmt.Sprintf(derived.ValidatingKeyDerivationPathTemplate, i)
-
-		// Retrieve the withdrawal key account metadata.
-		fmt.Printf("%s | %s\n", au.BrightBlue(fmt.Sprintf("Account %d", i)).Bold(), au.BrightGreen(accountNames[i]).Bold())
-		// Retrieve the validating key account metadata.
-		fmt.Printf("%s %#x\n", au.BrightCyan("[validating public key]").Bold(), validatingPubKeys[i])
-		if showPrivateKeys && validatingPrivateKeys != nil {
-			fmt.Printf("%s %#x\n", au.BrightRed("[validating private key]").Bold(), validatingPrivateKeys[i])
-		}
-		fmt.Printf("%s %s\n", au.BrightCyan("[derivation path]").Bold(), validatingKeyPath)
-		fmt.Println(" ")
-	}
 	return nil
 }
 

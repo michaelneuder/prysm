@@ -15,7 +15,6 @@ import (
 	"github.com/prysmaticlabs/prysm/validator/accounts/userprompt"
 	"github.com/prysmaticlabs/prysm/validator/accounts/wallet"
 	"github.com/prysmaticlabs/prysm/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/validator/keymanager/derived"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/local"
 	"github.com/prysmaticlabs/prysm/validator/keymanager/remote"
 	remote_web3signer "github.com/prysmaticlabs/prysm/validator/keymanager/remote-web3signer"
@@ -72,7 +71,13 @@ func CreateWalletWithKeymanager(ctx context.Context, cfg *CreateWalletConfig) (*
 	var err error
 	switch w.KeymanagerKind() {
 	case keymanager.Local:
-		if err = createLocalKeymanagerWallet(ctx, w); err != nil {
+		if err = createLocalKeymanagerWallet(
+			ctx,
+			w,
+			cfg.Mnemonic25thWord,
+			cfg.SkipMnemonicConfirm,
+			cfg.NumAccounts,
+		); err != nil {
 			return nil, errors.Wrap(err, "could not initialize wallet")
 		}
 		// TODO(#9883) - Remove this when we have a better way to handle this. should be safe to use for now.
@@ -98,19 +103,6 @@ func CreateWalletWithKeymanager(ctx context.Context, cfg *CreateWalletConfig) (*
 
 		log.WithField("--wallet-dir", cfg.WalletCfg.WalletDir).Info(
 			"Successfully created wallet with ability to import keystores",
-		)
-	case keymanager.Derived:
-		if err = createDerivedKeymanagerWallet(
-			ctx,
-			w,
-			cfg.Mnemonic25thWord,
-			cfg.SkipMnemonicConfirm,
-			cfg.NumAccounts,
-		); err != nil {
-			return nil, errors.Wrap(err, "could not initialize wallet")
-		}
-		log.WithField("--wallet-dir", cfg.WalletCfg.WalletDir).Info(
-			"Successfully created HD wallet from mnemonic and regenerated accounts",
 		)
 	case keymanager.Remote:
 		if err = createRemoteKeymanagerWallet(ctx, w, cfg.RemoteKeymanagerOpts); err != nil {
@@ -157,7 +149,7 @@ func extractWalletCreationConfigFromCli(cliCtx *cli.Context, keymanagerKind keym
 	}
 	skipMnemonic25thWord := cliCtx.IsSet(flags.SkipMnemonic25thWordCheckFlag.Name)
 	has25thWordFile := cliCtx.IsSet(flags.Mnemonic25thWordFileFlag.Name)
-	if keymanagerKind == keymanager.Derived {
+	if keymanagerKind == keymanager.EnableMnemonic() {
 		numAccounts, err := inputNumAccounts(cliCtx)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not get number of accounts to generate")
@@ -204,17 +196,7 @@ func extractWalletCreationConfigFromCli(cliCtx *cli.Context, keymanagerKind keym
 	return createWalletConfig, nil
 }
 
-func createLocalKeymanagerWallet(_ context.Context, wallet *wallet.Wallet) error {
-	if wallet == nil {
-		return errors.New("nil wallet")
-	}
-	if err := wallet.SaveWallet(); err != nil {
-		return errors.Wrap(err, "could not save wallet to disk")
-	}
-	return nil
-}
-
-func createDerivedKeymanagerWallet(
+func createLocalKeymanagerWallet(
 	ctx context.Context,
 	wallet *wallet.Wallet,
 	mnemonicPassphrase string,
@@ -227,19 +209,21 @@ func createDerivedKeymanagerWallet(
 	if err := wallet.SaveWallet(); err != nil {
 		return errors.Wrap(err, "could not save wallet to disk")
 	}
-	km, err := derived.NewKeymanager(ctx, &derived.SetupConfig{
-		Wallet:           wallet,
-		ListenForChanges: true,
-	})
-	if err != nil {
-		return errors.Wrap(err, "could not initialize HD keymanager")
-	}
-	mnemonic, err := derived.GenerateAndConfirmMnemonic(skipMnemonicConfirm)
-	if err != nil {
-		return errors.Wrap(err, "could not confirm mnemonic")
-	}
-	if err := km.RecoverAccountsFromMnemonic(ctx, mnemonic, mnemonicPassphrase, numAccounts); err != nil {
-		return errors.Wrap(err, "could not recover accounts from mnemonic")
+	if wallet.EnableMnemonic() {
+		km, err := local.NewKeymanager(ctx, &local.SetupConfig{
+			Wallet:           wallet,
+			ListenForChanges: true,
+		})
+		if err != nil {
+			return errors.Wrap(err, "could not initialize HD keymanager")
+		}
+		mnemonic, err := local.GenerateAndConfirmMnemonic(skipMnemonicConfirm)
+		if err != nil {
+			return errors.Wrap(err, "could not confirm mnemonic")
+		}
+		if err := km.RecoverAccountsFromMnemonic(ctx, mnemonic, mnemonicPassphrase, numAccounts); err != nil {
+			return errors.Wrap(err, "could not recover accounts from mnemonic")
+		}
 	}
 	return nil
 }
